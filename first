@@ -1,0 +1,78 @@
+  def test_simple_doctestfile(self, testdir):
+        p = testdir.maketxtfile(
+            test_doc="""
+            >>> x = 1
+            >>> x == 1
+            False
+        """
+        )
+        reprec = testdir.inline_run(p)
+        reprec.assertoutcome(failed=1)
+
+    def test_new_pattern(self, testdir):
+        p = testdir.maketxtfile(
+            xdoc="""
+            >>> x = 1
+            >>> x == 1
+            False
+        """
+        )
+        reprec = testdir.inline_run(p, "--doctest-glob=x*.txt")
+        reprec.assertoutcome(failed=1)
+
+    def test_multiple_patterns(self, testdir):
+        """Test support for multiple --doctest-glob arguments (#1255).
+        """
+        testdir.maketxtfile(
+            xdoc="""
+            >>> 1
+            1
+        """
+        )
+        testdir.makefile(
+            ".foo",
+            test="""
+            >>> 1
+            1
+        """,
+        )
+        testdir.maketxtfile(
+            test_normal="""
+            >>> 1
+            1
+        """
+        )
+        expected = {"xdoc.txt", "test.foo", "test_normal.txt"}
+        assert {x.basename for x in testdir.tmpdir.listdir()} == expected
+        args = ["--doctest-glob=xdoc*.txt", "--doctest-glob=*.foo"]
+        result = testdir.runpytest(*args)
+        result.stdout.fnmatch_lines(["*test.foo *", "*xdoc.txt *", "*2 passed*"])
+        result = testdir.runpytest()
+        result.stdout.fnmatch_lines(["*test_normal.txt *", "*1 passed*"])
+
+    @pytest.parametrize(
+        "   test_string,    encoding",
+        [("foo", "ascii"), ("öäü", "latin1"), ("öäü", "utf-8")],
+    )
+    def test_encoding(self, testdir, test_string, encoding):
+        """Test support for doctest_encoding ini option.
+        """
+        testdir.makeini(
+            """
+            [pytest]
+            doctest_encoding={}
+        """.format(
+                encoding
+            )
+        )
+        doctest = """
+            >>> "{}"
+            {}
+        """.format(
+            test_string, repr(test_string)
+        )
+        testdir._makefile(".txt", [doctest], {}, encoding=encoding)
+
+        result = testdir.runpytest()
+
+        result.stdout.fnmatch_lines(["*1 passed*"])
